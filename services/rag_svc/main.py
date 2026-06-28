@@ -1,5 +1,6 @@
 """Mock downstream RAG service."""
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 app = FastAPI(title="rag_svc (mock)")
 
@@ -16,4 +17,4 @@ async def rag_answer(payload: dict):
 
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "rag_svc"}

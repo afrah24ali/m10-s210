@@ -6,15 +6,31 @@ the coordinator can fan out against while the learner authors the real
 service body.
 """
 from fastapi import FastAPI
+from pydantic import BaseModel
+
 
 app = FastAPI(title="nlp_svc (mock)")
+class ExtractRequest(BaseModel):
+    question: str
 
 
 @app.post("/extract")
-async def extract(payload: dict):
-    return {"entities": [], "service": "nlp_svc"}
+def extract(req: ExtractRequest):
+    words = req.question.split()
+
+    entities = [
+        {"text": word, "label": "ENTITY"}
+        for word in words
+        if word[:1].isupper()
+    ]
+
+    return {
+        "service": "nlp_svc",
+        "question": req.question,
+        "entities":entities,
+    }
 
 
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "nlp_svc"}

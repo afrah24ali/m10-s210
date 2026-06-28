@@ -3,7 +3,7 @@
 Output shape matches the stretch-thu learner guide:
 ``{"results": {service_name: response, ...}, "partial": bool, "responded": [service_name, ...]}``.
 """
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional,Any
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,6 @@ class AnswerResponse(BaseModel):
     - ``responded`` lists the service names that returned success
       within the per-call timeout.
     """
-    results: Dict[str, Optional[dict]]
+    results: Dict[str, Any]
     partial: bool
     responded: List[str]
