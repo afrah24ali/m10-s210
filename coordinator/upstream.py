@@ -1,25 +1,87 @@
-"""httpx.AsyncClient helpers — per-call timeout enforcement.
+"""httpx.AsyncClient helpers — per-call timeout enforcement."""
 
-Catches a common mistake where learners set the timeout at the session
-level (once across the whole AsyncClient lifecycle) instead of per
-.get/.post call. The session-level timeout still applies but does not
-fire per call, so slow upstreams can starve faster ones.
-"""
+import asyncio
+import logging
 import time
+from typing import Any
 
 import httpx
 
+from coordinator.models import UpstreamResult
 
-async def call_upstream(service: str, url: str, payload: dict, timeout_s: float = 5.0):
-    """Call one upstream service. Returns an UpstreamResult-shaped dict.
 
-    Per-call timeout via `httpx.Timeout(timeout_s)` on `.post`.
-    """
-    # TODO:
-    # 1. Record start_ms = time.perf_counter() * 1000.
-    # 2. async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
-    #        try POST url with json=payload.
-    # 3. On TimeoutException → return {"service", "status": "timeout", ...}.
-    # 4. On any other exception → return {"service", "status": "error", "error": str(e), ...}.
-    # 5. On success → return {"service", "status": "ok", "payload": r.json(), ...}.
-    raise NotImplementedError
+logger = logging.getLogger("coordinator.upstream")
+
+
+async def call_upstream(
+    service: str,
+    url: str,
+    payload: dict,
+    timeout_s: float = 5.0,
+) -> dict[str, Any]:
+    """Call one upstream service with per-call timeout enforcement."""
+
+    start = time.perf_counter()
+    client = httpx.AsyncClient()
+
+    try:
+        response = await asyncio.wait_for(
+            client.post(url, json=payload),
+            timeout=timeout_s,
+        )
+
+        status_code = getattr(response, "status_code", 200)
+
+        if status_code >= 500:
+            result = UpstreamResult(
+                service=service,
+                status="error",
+                payload=None,
+                error=f"upstream returned {status_code}",
+            )
+        else:
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+
+            result = UpstreamResult(
+                service=service,
+                status="ok",
+                payload=response.json(),
+                error=None,
+            )
+
+    except (asyncio.TimeoutError, httpx.TimeoutException):
+        result = UpstreamResult(
+            service=service,
+            status="timeout",
+            payload=None,
+            error="upstream timed out",
+        )
+
+    except httpx.HTTPError as exc:
+        result = UpstreamResult(
+            service=service,
+            status="error",
+            payload=None,
+            error=str(exc),
+        )
+
+    finally:
+        close = getattr(client, "aclose", None)
+        if close is not None:
+            await close()
+
+    latency_ms = round((time.perf_counter() - start) * 1000, 2)
+    result.latency_ms = latency_ms
+
+    logger.info(
+        {
+            "event": "upstream_call",
+            "service": result.service,
+            "status": result.status,
+            "timeout_s": timeout_s,
+            "latency_ms": latency_ms,
+        }
+    )
+
+    return result.model_dump()

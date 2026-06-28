@@ -77,13 +77,19 @@ def score(tokens: set[str], keywords: set[str]) -> float:
     return len(tokens & keywords) / max(len(keywords), 1)
 
 @app.post("/classify", response_model=ClassifyResponse)
-async def classify(payload: ClassifyRequest):
-    tokens = tokenize(payload.question)
+async def classify(payload: ClassifyRequest| dict):
+    if isinstance(payload, dict):
+        question = payload.get("question", "")
+    else:
+        question = payload.question
+
+    tokens = tokenize(question)
+
     nlp_score = score(tokens, NLP_KEYWORDS)
     kg_score = score(tokens, KG_KEYWORDS)
     rag_score = score(tokens, RAG_KEYWORDS)
 
-    routes: list[dict] = []
+    routes = []
     if nlp_score > 0:
         routes.append({"service": "nlp_svc", "confidence": round(nlp_score, 3)})
 
